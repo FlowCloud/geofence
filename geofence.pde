@@ -1,3 +1,5 @@
+#include <TinyGPS++.h>
+
   /* We want to map pins 5 and 7 to Serial2 (for RX and TX respectively).
 	 Serial2 uses using the WiFire's UART6 and both pin 5 and 7 support being mapped
 	 to the relevant peripheral (U6RX and U6TX) .
@@ -12,6 +14,9 @@
 
 // The GPS module we will be using uses a 9600-baud RS232 connection
 #define GPSBaud (9600)
+
+// Object for the tinyGPS++ library we are using
+TinyGPSPlus gps;
 
 void setup()
 {
@@ -46,12 +51,60 @@ void setup()
 	Serial.println();
 }
 
+void logLocation()
+{
+	Serial.print("latitude: ");
+	Serial.println(gps.location.lat());
+	Serial.print("longitude: ");
+	Serial.println(gps.location.lng());
+	Serial.print("reading age: ");
+	Serial.println(gps.location.age());
+
+	Serial.print("satellites: ");
+	Serial.println(gps.satellites.value());
+
+	Serial.print("altitude: ");
+	Serial.println(gps.altitude.meters());
+
+	Serial.print("speed: ");
+	Serial.println(gps.speed.mps());
+
+	Serial.print("course: ");
+	Serial.println(gps.course.deg());
+
+	Serial.print("hdop: ");
+	Serial.println(gps.hdop.value());
+
+	Serial.println();
+	Serial.println();
+}
+
 void loop()
 {
+	// log every 5 seconds
+	#define LOGGING_PERIOD 5000
+	static long lastLog = -2*LOGGING_PERIOD;
 
 	while (Serial2.available() > 0)
 	{
-		Serial.write(Serial2.read());
+		if (gps.encode(Serial2.read()))
+		{
+
+			// if the configured period of time has passed then save a new reading
+			if (millis() - lastLog > LOGGING_PERIOD)
+			{
+				lastLog = millis();
+
+				logLocation();
+			}
+		}
+	}
+
+	// if the sketch has been running for 5s and the GPS isn't working then give up
+	if (millis() > 5000 && gps.charsProcessed() < 10)
+	{
+		Serial.println("No GPS detected: check wiring then reset.");
+		for(;;);
 	}
 
 }
