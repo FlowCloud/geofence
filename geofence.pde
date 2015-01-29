@@ -17,6 +17,14 @@ private:
 	FlowDataStore _datastore;
 };
 
+// Store the 3 components of the geofence
+struct Geofence
+{
+	double latitude;
+	double longitude;
+	double radius;
+};
+
   /* We want to map pins 5 and 7 to Serial2 (for RX and TX respectively).
 	 Serial2 uses using the WiFire's UART6 and both pin 5 and 7 support being mapped
 	 to the relevant peripheral (U6RX and U6TX) .
@@ -49,6 +57,12 @@ int loggingPeriod = 2 * 60 * 1000;
 
 #define SET_PERIOD ("SET PERIOD")
 #define GET_PERIOD ("GET PERIOD")
+
+#define SET_GEOFENCE ("SET GEOFENCE")
+#define GET_GEOFENCE ("GET GEOFENCE")
+
+// Initially no fence
+Geofence fence = {0};
 
 void setup()
 {
@@ -87,6 +101,9 @@ void setup()
 	FlowCommandHandler.attach(SET_PERIOD, setPeriod);
 	FlowCommandHandler.attach(GET_PERIOD, getPeriod);
 
+
+	FlowCommandHandler.attach(SET_GEOFENCE, setGeofence);
+	FlowCommandHandler.attach(GET_GEOFENCE, getGeofence);
 	// Load the datastore from FlowCloud
 	Serial.println("Fetching datastore from FlowCloud... ");  
 	if (!datastore.load()){
@@ -119,6 +136,24 @@ void getPeriod(ReadableXMLNode &params, XMLNode &response)
 void setPeriod(ReadableXMLNode &params, XMLNode &response)
 {
 	loggingPeriod = params.getChild("period").getIntegerValue();
+}
+
+// command handler for setting the geofence
+void setGeofence(ReadableXMLNode &params, XMLNode &response)
+{
+	fence.latitude = params.getChild("geofence/location/latitude").getFloatValue();
+	fence.longitude = params.getChild("geofence/location/longitude").getFloatValue();
+	fence.radius = params.getChild("geofence/radius").getFloatValue();
+}
+
+// command handler for getting the existing geofence
+void getGeofence(ReadableXMLNode &params, XMLNode &response)
+{
+	XMLNode &geofence = response.addChild("geofence");
+	XMLNode &location = geofence.addChild("location");
+	location.addChild("latitude").setContent(fence.latitude, 9);
+	location.addChild("longitude").setContent(fence.longitude, 9);
+	geofence.addChild("radius").setContent(fence.radius, 5);
 }
 
 // read the current GPS location from the NMEA library to a XML node
