@@ -1,4 +1,5 @@
 #include <TinyGPS++.h>
+#include <FlowCommandHandler.h>
 #include <XMLNode.h>
 
 // The Datastore class wraps the Flow datastore in a C++ object and
@@ -34,14 +35,20 @@ private:
 // The GPS module we will be using uses a 9600-baud RS232 connection
 #define GPSBaud (9600)
 
+
 // Object for the tinyGPS++ library we are using
 TinyGPSPlus gps;
 
 // Access to the Flow datastore named "GPSReading"
 DataStore datastore("GPSReading");
 
-// log every minute
-#define LOGGING_PERIOD (1 * 60 * 1000)
+// logging period, the time between each write to the datastore
+int loggingPeriod = 2 * 60 * 1000;
+
+#define GET_LOCATION ("GET LOCATION")
+
+#define SET_PERIOD ("SET PERIOD")
+#define GET_PERIOD ("GET PERIOD")
 
 void setup()
 {
@@ -52,6 +59,7 @@ void setup()
 	// We are not reading from Serial and don't mind sharing it with libappbase
 	g_EnableConsole = true;
 	g_EnableConsoleInput = true;
+
 
 	Serial.println("RS232_GPS.ino  ");
 	Serial.print("Using TinyGPS++ library v. ");
@@ -74,6 +82,11 @@ void setup()
 	pinMode(29, INPUT);
 	 */
 
+	// Attach the various command handlers
+	FlowCommandHandler.attach(GET_LOCATION, getLocation);
+	FlowCommandHandler.attach(SET_PERIOD, setPeriod);
+	FlowCommandHandler.attach(GET_PERIOD, getPeriod);
+
 	// Load the datastore from FlowCloud
 	Serial.println("Fetching datastore from FlowCloud... ");  
 	if (!datastore.load()){
@@ -83,6 +96,29 @@ void setup()
 
 	Serial.println();
 	Serial.println();
+}
+
+// command handler for fetching the current location
+void getLocation(ReadableXMLNode &params, XMLNode &response)
+{
+	if (gps.location.isValid())
+	{
+		XMLNode &reading = response.addChild("gpsreading");
+		readGPSToXML(reading);
+	}
+}
+
+// command handler for fetching the current logging period
+void getPeriod(ReadableXMLNode &params, XMLNode &response)
+{
+	XMLNode &period = response.addChild("period");
+	period.setContent(loggingPeriod);
+}
+
+// command handler for setting the period
+void setPeriod(ReadableXMLNode &params, XMLNode &response)
+{
+	loggingPeriod = params.getChild("period").getIntegerValue();
 }
 
 // read the current GPS location from the NMEA library to a XML node
@@ -158,8 +194,8 @@ void clearOldReadings()
 
 	char datetimeStr[DATETIME_FIELD_LENGTH];
 	time_t currentDateTimeSeconds;
-	// can we make this actually remove all but 40 items?
-	currentDateTimeSeconds -= (LOGGING_PERIOD / 1000) * 40; // ~40 items in history
+	// can we make this actually remove all but 40 items
+	currentDateTimeSeconds -= (loggingPeriod / 1000) * 40; // ~40 items in history
 	Flow_GetTime(&currentDateTimeSeconds);
 	struct tm *currentDateTimeUTC = gmtime(&currentDateTimeSeconds);
 	strftime(datetimeStr, DATETIME_FIELD_LENGTH, "%Y-%m-%dT%H:%M:%SZ", currentDateTimeUTC);
@@ -174,11 +210,13 @@ void clearOldReadings()
 
 void loop()
 {
+
 	// record the time of the las save so we know when to next save
 	// initially set this to long enough ago that we will always save
 	// the current location when we first start up
-	static long lastSave = -2*LOGGING_PERIOD;
+	static long lastSave = -2*loggingPeriod;
 	static int count = 0;
+
 
 	while (Serial2.available() > 0)
 	{
@@ -186,7 +224,7 @@ void loop()
 		{
 
 			// if the configured period of time has passed then save a new reading
-			if (millis() - lastSave > LOGGING_PERIOD)
+			if (millis() - lastSave > loggingPeriod)
 			{
 				lastSave = millis();
 
