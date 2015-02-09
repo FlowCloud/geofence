@@ -2,6 +2,10 @@
 #include <FlowCommandHandler.h>
 #include <XMLNode.h>
 
+extern "C" {
+	#include "flow/flowmessaging.h"
+}
+
 // The Datastore class wraps the Flow datastore in a C++ object and
 // allows us easy access to load, clear and to save a XML node
 // This class is implemented in Datastore.pde
@@ -61,6 +65,8 @@ int loggingPeriod = 2 * 60 * 1000;
 #define SET_GEOFENCE ("SET GEOFENCE")
 #define GET_GEOFENCE ("GET GEOFENCE")
 
+#define GEOFENCE_ESCAPED ("GEOFENCE ESCAPED")
+
 // Initially no fence
 Geofence fence = {0};
 
@@ -111,6 +117,12 @@ void setup()
 		for(;;);
 	}
 
+	// Enable LEDs for output
+	pinMode(PIN_LED1, OUTPUT);
+	pinMode(PIN_LED2, OUTPUT);
+	pinMode(PIN_LED3, OUTPUT);
+	pinMode(PIN_LED4, OUTPUT);
+
 	Serial.println();
 	Serial.println();
 }
@@ -156,10 +168,8 @@ void getGeofence(ReadableXMLNode &params, XMLNode &response)
 	geofence.addChild("radius").setContent(fence.radius, 5);
 }
 
-// read the current GPS location from the NMEA library to a XML node
-void readGPSToXML(XMLNode &xml)
+void setDatetimeContent(XMLNode &node)
 {
-
 	// create a sting for the current datetime
 	#define DATETIME_FIELD_LENGTH 32
 	char datetimeStr[DATETIME_FIELD_LENGTH];
@@ -167,11 +177,16 @@ void readGPSToXML(XMLNode &xml)
 	Flow_GetTime(&currentDateTimeSeconds);
 	struct tm *currentDateTimeUTC = gmtime(&currentDateTimeSeconds);
 	strftime(datetimeStr, DATETIME_FIELD_LENGTH, "%Y-%m-%dT%H:%M:%SZ", currentDateTimeUTC);
+	node.setContent(datetimeStr);
+}
 
+// read the current GPS location from the NMEA library to a XML node
+void readGPSToXML(XMLNode &xml)
+{
 	XMLNode &readingTime = xml.addChild("gpsreadingtime");
 	readingTime.addAttribute("type", "datetime");
 	readingTime.addAttribute("index", "true");
-	readingTime.setContent(datetimeStr);
+	setDatetimeContent(readingTime);
 
 	XMLNode &location = xml.addChild("location");
 	XMLNode &lat = location.addChild("latitude");
@@ -200,7 +215,7 @@ void readGPSToXML(XMLNode &xml)
 }
 
 // save the current GPS location to the FlowCloud datastore
-bool saveReadingToDatastore()
+bool saveReadingToDatastore(void)
 {
 	bool result = false;
 	if (gps.location.isValid())
@@ -222,7 +237,7 @@ bool saveReadingToDatastore()
 	return result;
 }
 
-void clearOldReadings()
+void clearOldReadings(void)
 {
 	char clearCmd[256];
 	strcpy(clearCmd, "@gpsreadingtime >= '");
@@ -241,6 +256,31 @@ void clearOldReadings()
 	datastore.clear(clearCmd);
 	Serial.print("Clearing old datastore items ");
 	Serial.println(clearCmd);
+}
+
+void sendAlert(const char *type)
+{
+	XMLNode alert("alert");
+
+	XMLNode &sent = alert.addChild("sent");
+	setDatetimeContent(sent);
+
+	XMLNode &typeNode = alert.addChild("type");
+	typeNode.setContent(type);
+
+	StringBuilder alertStringBuilder = StringBuilder_New(512);
+	alertStringBuilder = StringBuilder_Append(alertStringBuilder, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+	alert.appendTo(alertStringBuilder);
+
+	FlowMessaging_SendMessageToUser(
+		g_OwnerID, 
+		"text/plain", 
+		(char *)StringBuilder_GetCString(alertStringBuilder), 
+		StringBuilder_GetLength(alertStringBuilder), 
+		120
+	);
+
+	StringBuilder_Free(&alertStringBuilder);
 }
 
 void loop()
@@ -275,6 +315,38 @@ void loop()
 				{
 					Serial.println("Save to datastore failed");
 				}
+			}
+		}
+	}
+
+	static bool insideFence = true;
+	static long lastInsideFence = 0;
+	static long lastOutsideFence = 0;
+	#define FENCE_TIME_THRESHOLD (10*1000)
+	if (gps.location.isValid() && fence.radius > 0)
+	{
+		// check for escaped geofence
+		double distance = gps.distanceBetween(fence.latitude, fence.longitude, gps.location.lat(), gps.location.lng());
+		if (distance > fence.radius)
+		{
+			// escaped
+			lastOutsideFence = millis();
+			digitalWrite(PIN_LED1, HIGH);
+			if (insideFence && lastOutsideFence - lastInsideFence > FENCE_TIME_THRESHOLD)
+			{
+				digitalWrite(PIN_LED2, HIGH);
+				insideFence = false;
+				sendAlert(GEOFENCE_ESCAPED);
+			}
+		}
+		else
+		{
+			lastInsideFence = millis();
+			digitalWrite(PIN_LED1, LOW);
+			if (!insideFence && lastInsideFence - lastOutsideFence > FENCE_TIME_THRESHOLD)
+			{
+				digitalWrite(PIN_LED2, LOW);
+				insideFence = true;
 			}
 		}
 	}
