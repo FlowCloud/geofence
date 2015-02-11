@@ -351,13 +351,6 @@ void loop()
 		}
 	}
 
-	// if the sketch has been running for 5s and the GPS isn't working then give up
-	if (millis() > 5000 && gps.charsProcessed() < 10)
-	{
-		Serial.println("No GPS detected: check wiring then reset.");
-		for(;;);
-	}
-
 	// allow a manual clear of the database
 	if (digitalRead(BTN1) == HIGH){
 		Serial.println("Deleting datestore");
