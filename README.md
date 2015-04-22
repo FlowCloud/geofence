@@ -3,7 +3,7 @@
 This project uses the [FlowCloud](http://flow.imgtec.com/developers/) libraries within the Arduino environment on a WiFire development board to create a Internet of Things connected 
 Geofence.
 
-Check out the blog for using FlowCloud with Arduino on the WiFire [here](link-not-implemented) or jump straight to the [section for this project](link-not-implemented)
+Check out the blog for using FlowCloud with Arduino on the WiFire [here](http://flowcloud.github.io/flow-on-arduino/) or jump straight to the [section for this project](http://flowcloud.github.io/flow-on-arduino/page6/)
 
 <!-- Image goes here -->
 
